@@ -1,21 +1,26 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
 export default {
   async fetch(request, env, ctx) {
+    const urlObj = new URL(request.url);
+
+    // パスを分割して観測所IDを取得
+    // 例: https://<worker>.workers.dev/46106
+    const pathParts = urlObj.pathname.split("/").filter(Boolean);
+    const stationId = pathParts[0] || "46106"; // デフォルトは46106
+
     // 気象庁アメダスの最新データを取得
-    const url = "https://www.jma.go.jp/bosai/amedas/data/map/20251130134000.json";
-    const resp = await fetch(url);
+    const srcUrl = "https://www.jma.go.jp/bosai/amedas/data/map/20251130134000.json";
+    const resp = await fetch(srcUrl);
     const data = await resp.json();
 
-    // 観測所ID 46106 のデータを抽出
-    const station = data["46106"];
+    // 指定された観測所IDのデータを抽出
+    const station = data[stationId];
+
+    if (!station) {
+      return new Response(JSON.stringify({ error: "Station ID not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
 
     return new Response(JSON.stringify(station), {
       headers: { "Content-Type": "application/json" }

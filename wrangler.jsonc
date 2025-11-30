@@ -37,6 +37,12 @@
         "LOG_LEVEL": "INFO",
         "ENVIRONMENT": "prod"
       }
+    },
+    "dev": {
+      "vars": {
+        "LOG_LEVEL": "DEBUG",
+        "ENVIRONMENT": "dev"
+      }
     }
   }
 	// "vars": { "MY_VARIABLE": "production_value" }

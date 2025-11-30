@@ -5,11 +5,13 @@ const LOG_LEVELS = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
 function logger(env, level, ...args) {
   const currentLevel = LOG_LEVELS[env.LOG_LEVEL || "INFO"];
   if (LOG_LEVELS[level] >= currentLevel) {
+    const timestamp = new Date().toISOString(); // ISO形式の日時
+    const prefix = `[${timestamp}] [${level}]`;
     switch (level) {
-      case "DEBUG": console.debug(...args); break;
-      case "INFO": console.info(...args); break;
-      case "WARN": console.warn(...args); break;
-      case "ERROR": console.error(...args); break;
+      case "DEBUG": console.debug(prefix, ...args); break;
+      case "INFO": console.info(prefix, ...args); break;
+      case "WARN": console.warn(prefix, ...args); break;
+      case "ERROR": console.error(prefix, ...args); break;
     }
   }
 }
@@ -42,7 +44,7 @@ export default {
       if (cachedResp) {
         data = await cachedResp.json();
         usedTimestamp = timestamp;
-        logger(env, "DEBUG", `[CACHE HIT] station=${stationId}, timestamp=${timestamp}`);
+        logger(env, "DEBUG", `CACHE HIT: station=${stationId}, timestamp=${timestamp}`);
         break;
       } else {
         const resp = await fetch(srcUrl);
@@ -55,17 +57,17 @@ export default {
               "Cache-Control": "public, max-age=10"
             }
           })));
-          logger(env, "INFO", `[FETCH] station=${stationId}, timestamp=${timestamp}`);
+          logger(env, "INFO", `FETCH: station=${stationId}, timestamp=${timestamp}`);
           break;
         } else {
-          logger(env, "WARN", `[MISS] station=${stationId}, timestamp=${timestamp}, status=${resp.status}`);
+          logger(env, "WARN", `MISS: station=${stationId}, timestamp=${timestamp}, status=${resp.status}`);
         }
       }
     }
 
     // データが取得できなかった場合はエラー
     if (!data) {
-      logger(env, "ERROR", `[ERROR] No data available after ${MAX_FALLBACK_CYCLES} cycles`);
+      logger(env, "ERROR", `ERROR: No data available after ${MAX_FALLBACK_CYCLES} cycles`);
       return new Response(JSON.stringify({ error: "No data available after fallback" }), {
         status: 502,
         headers: { "Content-Type": "application/json" }
@@ -75,14 +77,14 @@ export default {
     // 指定された観測所IDのデータを抽出
     const station = data[stationId];
     if (!station) {
-      logger(env, "WARN", `[NOT FOUND] station=${stationId}, timestamp=${usedTimestamp}`);
+      logger(env, "WARN", `NOT FOUND: station=${stationId}, timestamp=${usedTimestamp}`);
       return new Response(JSON.stringify({ error: "Station ID not found" }), {
         status: 404,
         headers: { "Content-Type": "application/json" }
       });
     }
 
-    logger(env, "INFO", `[SUCCESS] station=${stationId}, timestamp=${usedTimestamp}`);
+    logger(env, "INFO", `SUCCESS: station=${stationId}, timestamp=${usedTimestamp}`);
 
     return new Response(JSON.stringify(station), {
       headers: { "Content-Type": "application/json" }

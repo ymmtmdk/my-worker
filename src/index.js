@@ -42,8 +42,11 @@ export default {
   async fetch(request, env, ctx) {
     const urlObj = new URL(request.url);
     const pathParts = urlObj.pathname.split("/").filter(Boolean);
+
     const stationId = pathParts[0] || "46106";
-    logger(env, "DEBUG", `START: station=${stationId}`);
+    const metricName = pathParts[1]; // 新しいパスパラメータ: 観測項目名
+
+    logger(env, "DEBUG", `START: station=${stationId}${metricName ? `, metric=${metricName}` : ""}`);
 
     // フォールバックサイクル数（10分単位で遡る最大回数）
     const MAX_FALLBACK_CYCLES = 5;
@@ -107,9 +110,22 @@ export default {
 			});
 		}
 
-		logger(env, "INFO", `SUCCESS: station=${stationId}, timestamp=${usedTimestamp}`);
+		let responseData = station;
+		if (metricName) {
+			const metric = station[metricName];
+			if (metric === undefined) {
+				logger(env, "WARN", `METRIC NOT FOUND: station=${stationId}, metric=${metricName}, timestamp=${usedTimestamp}`);
+				return new Response(JSON.stringify({ error: `Metric '${metricName}' not found for station '${stationId}'` }), {
+					status: 404,
+					headers: { "Content-Type": "application/json" }
+				});
+			}
+			responseData = metric;
+		}
 
-		return new Response(JSON.stringify(station), {
+		logger(env, "INFO", `SUCCESS: station=${stationId}${metricName ? `, metric=${metricName}` : ""}, timestamp=${usedTimestamp}`);
+
+		return new Response(JSON.stringify(responseData), {
 			headers: { "Content-Type": "application/json" }
 		});
 	}

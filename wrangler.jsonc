@@ -9,7 +9,7 @@
 	"compatibility_date": "2025-11-28",
 	"observability": {
 		"enabled": true
-	}
+	},
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
@@ -25,6 +25,20 @@
 	 * Environment Variables
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
+	   "vars": {
+    "LOG_LEVEL": "DEBUG",
+    "ENVIRONMENT": "dev"
+  },
+
+  // 環境ごとの設定
+  "env": {
+    "production": {
+      "vars": {
+        "LOG_LEVEL": "INFO",
+        "ENVIRONMENT": "prod"
+      }
+    }
+  }
 	// "vars": { "MY_VARIABLE": "production_value" }
 	/**
 	 * Note: Use secrets to store sensitive data.

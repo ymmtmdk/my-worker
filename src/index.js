@@ -5,7 +5,7 @@ const LOG_LEVELS = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };
 function logger(env, level, ...args) {
   const currentLevel = LOG_LEVELS[env.LOG_LEVEL || "INFO"];
   if (LOG_LEVELS[level] >= currentLevel) {
-    const timestamp = new Date().toISOString(); // ISO形式の日時
+    const timestamp = new Date().toISOString(); // ISO形式の日時 (UTC固定)
     const prefix = `[${timestamp}] [${level}]`;
     switch (level) {
       case "DEBUG": console.debug(prefix, ...args); break;
@@ -16,26 +16,47 @@ function logger(env, level, ...args) {
   }
 }
 
+// JST基準でアメダス用タイムスタンプ生成
+function getAmedasTimestamp(baseDate, offsetCycles = 0) {
+  // JSTに変換
+  const jst = new Date(baseDate.getTime() + 9 * 60 * 60 * 1000);
+
+  // 10分単位に丸め
+  const minutes = Math.floor(jst.getUTCMinutes() / 10) * 10;
+  jst.setUTCMinutes(minutes, 0, 0);
+
+  // フォールバック分だけ遡る
+  jst.setTime(jst.getTime() - offsetCycles * 10 * 60 * 1000);
+
+  // YYYYMMDDHHMM00 形式に整形
+  const YYYY = jst.getUTCFullYear();
+  const MM = String(jst.getUTCMonth() + 1).padStart(2, "0");
+  const DD = String(jst.getUTCDate()).padStart(2, "0");
+  const HH = String(jst.getUTCHours()).padStart(2, "0");
+  const MI = String(jst.getUTCMinutes()).padStart(2, "0");
+
+  return `${YYYY}${MM}${DD}${HH}${MI}00`;
+}
+
 export default {
   async fetch(request, env, ctx) {
     const urlObj = new URL(request.url);
     const pathParts = urlObj.pathname.split("/").filter(Boolean);
     const stationId = pathParts[0] || "46106";
+    logger(env, "DEBUG", `START: station=${stationId}`);
 
     // フォールバックサイクル数（10分単位で遡る最大回数）
-    const MAX_FALLBACK_CYCLES = 3;
+    const MAX_FALLBACK_CYCLES = 5;
 
-    // 現在時刻を10分単位に丸める
+    // 現在時刻
     const now = new Date();
-    now.setMinutes(Math.floor(now.getMinutes() / 10) * 10, 0, 0);
 
     let data = null;
     let usedTimestamp = null;
 
     // 最新から MAX_FALLBACK_CYCLES まで遡って試す
     for (let i = 0; i < MAX_FALLBACK_CYCLES; i++) {
-      const ts = new Date(now.getTime() - i * 10 * 60 * 1000);
-      const timestamp = ts.toISOString().replace(/[-:T.Z]/g, "").slice(0, 12) + "00";
+      const timestamp = getAmedasTimestamp(now, i);
       const srcUrl = `https://www.jma.go.jp/bosai/amedas/data/map/${timestamp}.json`;
       const cacheKey = new Request(srcUrl);
 
@@ -47,47 +68,49 @@ export default {
         logger(env, "DEBUG", `CACHE HIT: station=${stationId}, timestamp=${timestamp}`);
         break;
       } else {
-        const resp = await fetch(srcUrl);
-        if (resp.ok) {
-          data = await resp.json();
-          usedTimestamp = timestamp;
-          ctx.waitUntil(caches.default.put(cacheKey, new Response(JSON.stringify(data), {
-            headers: {
-              "Content-Type": "application/json",
-              "Cache-Control": "public, max-age=10"
-            }
-          })));
-          logger(env, "INFO", `FETCH: station=${stationId}, timestamp=${timestamp}`);
-          break;
-        } else {
-          logger(env, "WARN", `MISS: station=${stationId}, timestamp=${timestamp}, status=${resp.status}`);
-        }
-      }
-    }
+				if (i > 0) {
+					const resp = await fetch(srcUrl);
+					if (resp.ok) {
+						data = await resp.json();
+						usedTimestamp = timestamp;
+						ctx.waitUntil(caches.default.put(cacheKey, new Response(JSON.stringify(data), {
+							headers: {
+								"Content-Type": "application/json",
+								"Cache-Control": "public, max-age=10"
+							}
+						})));
+						logger(env, "INFO", `FETCH: station=${stationId}, timestamp=${timestamp}`);
+						break;
+					} else {
+						logger(env, "WARN", `MISS: station=${stationId}, timestamp=${timestamp}, status=${resp.status}`);
+					}
+				}
+			}
+		}
 
-    // データが取得できなかった場合はエラー
-    if (!data) {
-      logger(env, "ERROR", `ERROR: No data available after ${MAX_FALLBACK_CYCLES} cycles`);
-      return new Response(JSON.stringify({ error: "No data available after fallback" }), {
-        status: 502,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
+		// データが取得できなかった場合はエラー
+		if (!data) {
+			logger(env, "ERROR", `ERROR: No data available after ${MAX_FALLBACK_CYCLES} cycles`);
+			return new Response(JSON.stringify({ error: "No data available after fallback" }), {
+				status: 502,
+				headers: { "Content-Type": "application/json" }
+			});
+		}
 
-    // 指定された観測所IDのデータを抽出
-    const station = data[stationId];
-    if (!station) {
-      logger(env, "WARN", `NOT FOUND: station=${stationId}, timestamp=${usedTimestamp}`);
-      return new Response(JSON.stringify({ error: "Station ID not found" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
+		// 指定された観測所IDのデータを抽出
+		const station = data[stationId];
+		if (!station) {
+			logger(env, "WARN", `NOT FOUND: station=${stationId}, timestamp=${usedTimestamp}`);
+			return new Response(JSON.stringify({ error: "Station ID not found" }), {
+				status: 404,
+				headers: { "Content-Type": "application/json" }
+			});
+		}
 
-    logger(env, "INFO", `SUCCESS: station=${stationId}, timestamp=${usedTimestamp}`);
+		logger(env, "INFO", `SUCCESS: station=${stationId}, timestamp=${usedTimestamp}`);
 
-    return new Response(JSON.stringify(station), {
-      headers: { "Content-Type": "application/json" }
-    });
-  }
+		return new Response(JSON.stringify(station), {
+			headers: { "Content-Type": "application/json" }
+		});
+	}
 };

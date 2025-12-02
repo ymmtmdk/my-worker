@@ -10,10 +10,10 @@ const MS_PER_MINUTE = SECONDS_PER_MINUTE * MS_PER_SECOND;
 const MS_PER_HOUR = 60 * MS_PER_MINUTE;
 
 // フォールバック関連
-const MAX_FALLBACK_CYCLES = 5;
+const MAX_FALLBACK_CYCLES = 6;
 
 // キャッシュ寿命
-const CACHE_TTL_NORMAL = 60;   // 正常データキャッシュ寿命（秒）
+const CACHE_TTL_NORMAL = 6000;   // 正常データキャッシュ寿命（秒）
 const CACHE_TTL_NEGATIVE = 10; // ネガティブキャッシュ寿命（秒）
 
 // ===== ロガー関数 =====
@@ -67,7 +67,9 @@ async function getAmedasData(timestamp, ctx, env) {
     }
     logger(env, "DEBUG", `CACHE HIT: timestamp=${timestamp}`);
     return cachedData;
-  }
+  } else {
+    logger(env, "DEBUG", `NO CACHE: timestamp=${timestamp}`);
+	}
 
   // キャッシュミス → フェッチ
   const resp = await fetch(srcUrl);
@@ -84,7 +86,7 @@ async function getAmedasData(timestamp, ctx, env) {
     ctx.waitUntil(caches.default.put(cacheKey, new Response(JSON.stringify(negativeData), {
       headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${CACHE_TTL_NEGATIVE}` }
     })));
-    logger(env, "WARN", `NEGATIVE CACHE SET: timestamp=${timestamp}`);
+    logger(env, "INFO", `NEGATIVE CACHE SET: timestamp=${timestamp}`);
     return null;
   } else {
     logger(env, "WARN", `FETCH FAIL: timestamp=${timestamp}, status=${resp.status}`);
